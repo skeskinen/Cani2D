@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.0/jquery.min.js"></script> 
+  <script src="http://code.createjs.com/preloadjs-0.2.0.min.js"></script>
+  <script src="../src/cani2d.js"></script>
+  <script>
+  $(function(){	
+	  var time;
+
+	manifest = [
+		{src:"../assets/json/tube.json", id:"tube"},
+		{src:"../assets/img/tube.png", id:"tube_texture"},
+	];
+    preload = new createjs.PreloadJS();
+	preload.onComplete = loaded;
+	preload.loadManifest( manifest );
+
+	function loaded(){
+
+		ctx = document.getElementById('canvas').getContext('2d');
+
+		ctx.translate(ctx.canvas.width/2, ctx.canvas.height/2);
+		ctx.scale(40,40);
+		model = JSON.parse(preload.getResult('tube').result);
+		texture = preload.getResult('tube_texture').result;
+		mesh = new CANI2D.Mesh(model, texture);
+		anim = new CANI2D.Animation(mesh);
+		anim.play_animation( 'twist' );
+		time = Date.now();
+		requestAnimationFrame(animate);
+	}
+	function animate(){
+		CANI2D.clear( ctx );
+		var dt = Date.now() - time;
+		time = Date.now();
+		anim.update_animation( dt );
+		anim.draw( ctx );
+		
+		requestAnimationFrame( animate );
+	}
+	
+	
+  });
+  </script>
+</head>
+
+<body>
+	
+	<canvas id="canvas" width='1000' height='500'></canvas>
+	
+</body>
+</html>
