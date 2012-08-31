@@ -9,8 +9,8 @@ With skeletal animations you can have your animations running at any framerate w
 Current release: v0.0.1.
 
 Examples: 
-* [Really basic character animation]: http://laquendi.github.com/Cani2D/examples/milhi.html
-* [Bone demo]: http://laquendi.github.com/Cani2D/examples/tube.html
+* [Really basic character animation](http://laquendi.github.com/Cani2D/examples/milhi.html)
+* [Bone demo](http://laquendi.github.com/Cani2D/examples/tube.html)
 
 ### Things working:
 
