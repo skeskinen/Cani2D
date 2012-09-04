@@ -22,21 +22,24 @@
 
 		ctx.translate(ctx.canvas.width/2, ctx.canvas.height/2);
 		ctx.scale(40,40);
-		model = JSON.parse(preload.getResult('tube').result);
+		model = preload.getResult('tube').result;
 		texture = preload.getResult('tube_texture').result;
-		mesh = new CANI2D.Mesh(model, texture);
-		anim = new CANI2D.Animation(mesh);
+		mesh = new Cani2D.Mesh(model, texture);
+		anim = new Cani2D.Animation(mesh);
 		anim.play_animation( 'twist' );
 		time = Date.now();
+
 		requestAnimationFrame(animate);
 	}
 	function animate(){
-		CANI2D.clear( ctx );
+		Cani2D.clear( ctx );
 		var dt = Date.now() - time;
 		time = Date.now();
+		console.log('frame');
 		anim.update_animation( dt );
 		anim.draw( ctx );
-		
+
+//		setTimeout(requestAnimationFrame, 1000, animate);
 		requestAnimationFrame( animate );
 	}
 	

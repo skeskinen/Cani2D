@@ -1,7 +1,7 @@
 bl_info = {
 	"name": "Cani2D (.json)",
 	"author": "Santtu Keskinen <laquendi@gmail.com>",
-	"version": (0, 0, 1),
+	"version": (0, 0, 2),
 	"blender": (2, 6),
 	"location": "File > Import-Export > Cani2D (.json) ",
 	"description": "Export Cani2D geometry",

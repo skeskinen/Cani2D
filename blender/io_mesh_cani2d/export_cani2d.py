@@ -1,111 +1,34 @@
 import bpy
 
 TEMPLATE_FILE = '''{{
-	"exporter_version": [0,0,1],
+	"exporter_version": [0,0,2],
 	"faces": [{0}],
 	"vertices": [{1}],
 	"uv": [{2}],
-	"vertex_groups": {{{3}}},
-	"bones": [{4}],
-	"animations": {{{5}}}
+	"vertex_group_indices": [{3}],
+	"vertex_group_weights": [{4}],
+	"vertex_group_names": [{5}],
+	"bones": [{6}],
+	"bone_names": [{7}],
+	"animations": {{{8}}}
 }}'''
-
-TEMPLATE_FACE = '''{{"z":{z},"vertices":[{vertices}]}}'''
-
-TEMPLATE_VERTEX_GROUP = '''"{0}":[{1}]
-'''
-
-TEMPLATE_BONE = '''{{"name":"{0}","head":[{1}],"children":[{3}]}}'''
 
 TEMPLATE_ANIMATION = '''"{name}":{{"length":{length}, "curves":{{{curves}}}}}'''
 
-TEMPLATE_ANIMATION_BONE = '''"{name}":[{curves}]
+TEMPLATE_ANIMATION_BONE = '''"{bone}":[{curves}]
 '''
 TEMPLATE_CURVE = '''{{"type":["{type}",{array_index}], "keys":[{keyframes}]}}
 '''
 
 TEMPLATE_KEYFRAME = '''[{frame},{value},[{handle_left}],[{handle_right}]]'''
 
-def bones_string(armature):
-	bones_list = []
-	def bone_string(bone):
-		children = []
-		for c in bone.children:
-			children.append(bone_string(c))
-		'''
-			export parent bones head in global space, childrens relative to parent
-			head_local means 'head location in armature space'
-			couldn't find any variable for loc related to parent so just subtract parent head_local from child head_local
-		'''
-		head = bone.head_local
-		if bone.parent:
-			head = head - bone.parent.head_local
-		else:
-			head = head + armature.location
-		rotation = bone.matrix.to_quaternion()
-		#mirror y-axis, cross your fingers
-		rotation[0]*=-1; rotation[1]*=-1
-		return TEMPLATE_BONE.format(bone.name, str(head[0])+','+str(-head[1]) ,','.join(children))
-	for bone in armature.data.bones:
-		if not bone.parent:
-			bones_list.append(bone_string(bone))
-	return ','.join(bones_list)
-
-def animations_string(armature):
-	animations_list = []
-	for track in armature.animation_data.nla_tracks:
-		if len(track.strips) < 1:
-			continue
-		last_frame = track.strips[len(track.strips)-1].frame_end
-		bones={}
-		#strips and keyframes are always sorted
-		for strip in track.strips:
-			for bone in strip.action.groups:
-				for curve in bone.channels:
-					type = curve.data_path.rsplit('.', 1)[1]
-					if type == 'rotation_quaternion':
-						type = 'q'
-					elif type == 'location':
-						type = 'l'
-					elif type == 'scale':
-						type = 's'
-					else:
-						print('unsupported curve type (euler or something)')
-					keyframes = []
-					for keyframe in curve.keyframe_points:
-						value = keyframe.co[1]
-						handle_left = keyframe.handle_left.copy()
-						handle_right = keyframe.handle_right.copy()
-						#mirror y-axis, cross your fingers
-						if type == 'q' and (curve.array_index == 0 or curve.array_index == 1):
-							value *= -1
-							handle_left[1] *= -1
-							handle_right[1] *= -1
-						if type == 'l' and curve.array_index == 1:
-							value *= -1
-						handle_left[0] += strip.frame_start
-						handle_right[0] += strip.frame_start
-						
-						keyframes.append(TEMPLATE_KEYFRAME.format(frame=keyframe.co[0] + strip.frame_start, value=value, handle_left=','.join(map(lambda x: str(x), handle_left)), handle_right=','.join(map(lambda x: str(x), handle_right))))
-					#get curves of correct type&array_index (if exists) and extend keyframes
-					bones.setdefault(bone.name, {}).setdefault(type, {}).setdefault(curve.array_index, []).extend(keyframes)
-		print(len(bones))
-		bone_strings = []		
-		for bone_name in bones.keys():
-			curves = []
-			bone = bones[bone_name]
-			for curve_type in bone.keys():
-				for array_index in bone[curve_type].keys():
-					curves.append(TEMPLATE_CURVE.format(type=curve_type, array_index=array_index, keyframes=','.join(bone[curve_type][array_index])))
-			bone_strings.append(TEMPLATE_ANIMATION_BONE.format(name=bone_name, curves=','.join(curves)))
-			
-		animations_list.append(TEMPLATE_ANIMATION.format(name=track.name, length=last_frame, curves=','.join(bone_strings) ))
-	return ','.join(animations_list)
 
 def write(filepath):
 	bpy.ops.object.mode_set(mode='OBJECT')
 	out = open(filepath, "w")
 	
+	'''setup objects'''
+
 	armature = False
 	object = False
 	mesh = False
@@ -134,49 +57,175 @@ def write(filepath):
 				if o.parent:
 					armature = o.parent
 				break
+	if armature:
+		sort_vertex_groups(object, armature)
+	''' '''
+
+	faces = faces_string(mesh)
+
+	vertices = vertices_string(object, mesh)
 	
-	vertex_groups = []
-	for g in range(0, len(object.vertex_groups)):
-		vertex_groups.append([])
+	uv = uv_string(mesh)
+
+	vertex_group_indices = vertex_group_indices_string(mesh)
+	vertex_group_weights = vertex_group_weights_string(mesh, armature)
+
+	vertex_group_names = vertex_group_names_string(object)
+
+	bones = ''
+	bone_names = ''
+	animations = ''
+	if armature:
+		bones = bones_string(armature)
+		bone_names = bone_names_string(armature)
+		animations = animations_string(armature)
 	
+	out.write(TEMPLATE_FILE.format(faces, vertices, uv, vertex_group_indices, vertex_group_weights, vertex_group_names, bones, bone_names, animations))
+	out.close()
+
+
+''' Sync vertex group indices with bones. '''
+def sort_vertex_groups(object, armature):
+	#need to change context to modify vertex groups
+	bpy.context.scene.objects.active=object
+	bones = armature.data.bones
+	groups = object.vertex_groups
+	for i in range(0, len(bones)):
+		bone = bones[i]
+		group = groups[bone.name]
+		bpy.ops.object.vertex_group_set_active(group=group.name)
+		while group.index != i:
+			bpy.ops.object.vertex_group_move(direction='UP')
+
+
+def faces_string(mesh):
 	str_list = []
 	for face in mesh.polygons:
-		z = 0
-		vertices = []
-		for v in face.vertices:
-			z = z + mesh.vertices[v].co[2]
-			vertices.append(str(v))
-		z = z/len(vertices)
-		str_list.append(TEMPLATE_FACE.format(z=str(z), vertices= ','.join(vertices)))
-	faces = ','.join(str_list)
-	
+		str_list.append('['+ ','.join(map(lambda x: str(x), face.vertices)) + ']' )
+	return ','.join(str_list)
+
+
+def vertices_string(object, mesh):
 	str_list = []
 	for vertex in mesh.vertices:
-		coord = vertex.co + object.matrix_world.to_translation()
+		coord = object.matrix_world * vertex.co
 		str_list.append(str(coord[0]))
 		str_list.append(str(-coord[1]))
-		for group in vertex.groups:
-			vertex_groups[group.group].append([vertex.index, group.weight])
-	vertices = ','.join(str_list)
-	
+		str_list.append(str(coord[2]))
+	return ','.join(str_list)
+
+
+def uv_string(mesh):
 	str_list = []
 	for v in mesh.uv_layers[0].data:
 		str_list.append(str(v.uv[0]))
 		str_list.append(str(1-v.uv[1]))
-	uv = ','.join(str_list)
-	
-	str_list = []
-	for group in object.vertex_groups:
-		group_str_list = []
-		for vertex in vertex_groups[group.index]:
-			group_str_list.append(str(vertex))
-		str_list.append(TEMPLATE_VERTEX_GROUP.format(group.name, ','.join(group_str_list)))
-	vertex_groups = ','.join(str_list)
-	
-	bones = ''
-	animations = ''
+	return ','.join(str_list)
+
+def vertex_group_indices_string(mesh):
+	all_vertices = []
+	for vertex in mesh.vertices:
+		groups = []
+		for group in vertex.groups:
+			groups.append(str(group.group))
+		all_vertices.append('[' + ','.join(groups) +']')
+	return ','.join(all_vertices)
+
+def vertex_group_weights_string(mesh, armature):
+	bone_amount = 0
 	if armature:
-		bones = bones_string(armature)
-		animations = animations_string(armature)
-	out.write(TEMPLATE_FILE.format(faces, vertices, uv, vertex_groups, bones, animations))
-	out.close()
+		bone_amount = len(armature.data.bones)
+	all_vertices = []
+	for vertex in mesh.vertices:
+		groups = []
+		for group in vertex.groups:
+			if group.group < bone_amount:
+				groups.append(str(group.weight))
+		all_vertices.append('[' + ','.join(groups) +']')
+	return ','.join(all_vertices)
+
+def vertex_group_names_string(object):
+	groups = []
+	for group in object.vertex_groups:
+		groups.append('"'+group.name+'"')
+	return ','.join(groups)
+
+def bones_string(armature):
+	#bones have no index so have to do this dict thing...
+	index_dict = {}
+	bones_list = []
+	for i in range(0, len(armature.data.bones)):
+		bone = armature.data.bones[ i ]
+		index_dict[bone.name] = i
+		head = armature.matrix_world * bone.head_local;
+		parent = -1
+		if bone.parent:
+			parent = index_dict[bone.parent.name]
+		bone_string = '[' + str(head[0]) + ','+str(-head[1])+','+str(head[2]) +','+str(parent)+']'
+		bones_list.append(bone_string)
+
+	return ','.join(bones_list)
+
+def bone_names_string(armature):
+	bones_list = []
+	for i in range(0, len(armature.data.bones)):
+		bone = armature.data.bones[ i ]
+		bones_list.append('"'+bone.name+'"')
+	return ','.join(bones_list)
+		
+
+def animations_string(armature):
+	#bones have no index so have to do this dict thing...
+	index_dict = {}
+	for i in range(0, len(armature.data.bones)):
+		bone = armature.data.bones[ i ]
+		index_dict[bone.name] = i
+
+	animations_list = []
+	for track in armature.animation_data.nla_tracks:
+		if len(track.strips) < 1:
+			continue
+		last_frame = track.strips[len(track.strips)-1].frame_end
+		bones={}
+		#strips and keyframes are always sorted
+		for strip in track.strips:
+			for bone in strip.action.groups:
+				for curve in bone.channels:
+					type = curve.data_path.rsplit('.', 1)[1]
+					axis = curve.array_index
+					if type == 'rotation_quaternion':
+						type = 'q'
+					elif type == 'location':
+						type = 'l'
+					elif type == 'scale':
+						type = 's'
+					else:
+						print('unsupported curve type (euler or something)')
+					keyframes = []
+					for keyframe in curve.keyframe_points:
+						value = keyframe.co[1]
+						handle_left = keyframe.handle_left.copy()
+						handle_right = keyframe.handle_right.copy()
+						#mirror y-axis, cross your fingers
+						if (type == 'q' and (axis == 0 or axis == 1)) or (type == 'l' and axis == 1):
+							value *= -1
+							handle_left[1] *= -1
+							handle_right[1] *= -1
+						handle_left[0] += strip.frame_start
+						handle_right[0] += strip.frame_start
+						
+						keyframes.append(TEMPLATE_KEYFRAME.format(frame=keyframe.co[0] + strip.frame_start, value=value, handle_left=','.join(map(lambda x: str(x), handle_left)), handle_right=','.join(map(lambda x: str(x), handle_right))))
+					#get curves of correct type&array_index (if exists) and extend keyframes
+					bones.setdefault(bone.name, {}).setdefault(type, {}).setdefault(axis, []).extend(keyframes)
+		print(len(bones))
+		bone_strings = []		
+		for bone_name in bones.keys():
+			curves = []
+			bone = bones[bone_name]
+			for curve_type in bone.keys():
+				for array_index in bone[curve_type].keys():
+					curves.append(TEMPLATE_CURVE.format(type=curve_type, array_index=array_index, keyframes=','.join(bone[curve_type][array_index])))
+			bone_strings.append(TEMPLATE_ANIMATION_BONE.format(bone=index_dict[bone_name], curves=','.join(curves)))
+			
+		animations_list.append(TEMPLATE_ANIMATION.format(name=track.name, length=last_frame, curves=','.join(bone_strings) ))
+	return ','.join(animations_list)

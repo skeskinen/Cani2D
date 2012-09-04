@@ -22,21 +22,21 @@
 
 		ctx.translate(ctx.canvas.width/2, ctx.canvas.height/2);
 		ctx.scale(80,80);
-		model = JSON.parse(preload.getResult('milhi_model').result);
+		model = preload.getResult('milhi_model').result;
 		texture = preload.getResult('milhi_parts').result;
-		mesh = new CANI2D.Mesh(model, texture);
-		anim = new CANI2D.Animation(mesh);
+		mesh = new Cani2D.Mesh(model, texture);
+		anim = new Cani2D.Animation(mesh);
 		anim.play_animation( 'wave' );
 		time = Date.now();
 		requestAnimationFrame(animate);
 	}
 	function animate(){
-		CANI2D.clear( ctx );
+		Cani2D.clear( ctx );
 		var dt = Date.now() - time;
 		time = Date.now();
 		anim.update_animation( dt );
 		anim.draw( ctx );
-		
+
 		requestAnimationFrame( animate );
 	}
 	
